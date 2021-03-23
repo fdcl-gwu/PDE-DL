@@ -1,0 +1,123 @@
+\documentclass[10pt]{article}
+
+\usepackage{amssymb,amsmath,amsthm}
+\usepackage{bm}
+\usepackage{graphicx,subcaption}
+\usepackage[letterpaper, top=1in, left=1in, right=1in, bottom=1in]{geometry}
+
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+
+\newcommand{\SO}{\ensuremath{\mathrm{SO}(3)}}
+\newcommand{\tr}[1]{\ensuremath{\mathrm{tr}\left( #1 \right)}}
+\newcommand{\abs}[1]{\ensuremath{\left| #1 \right|}}
+\newcommand{\diff}[1]{\mathrm{d}#1}
+\newcommand{\vect}[1]{\ensuremath{\mathrm{vec}\left[ #1 \right]}}
+\newcommand{\norm}[1]{\ensuremath{\left\lVert#1\right\rVert}}
+
+\newcommand{\liediff}{\mathfrak{d}}
+\newcommand{\dft}{\mathcal{F}}
+\newcommand{\real}{\ensuremath{\mathbb{R}}}
+\newcommand{\sph}{\ensuremath{\mathbb{S}}}
+\newcommand{\diag}{\ensuremath{\mathrm{diag}}}
+
+\begin{document}
+
+\section{Definition and Facts}
+The Ornstein-Uhlenbeck process is defined by the following stochastic differential equation
+\begin{equation} \label{OU SDE}
+	\text{d}X_t = a(\mu-X_t)\text{d}t + \sigma\text{d}B_t,
+\end{equation}
+where $a > 0$ and $\sigma > 0$. Equation (\ref{OU SDE}) has solution
+\begin{equation}
+	X_t = X_0e^{-at} + \mu\left(1-e^{-at}\right) + \sigma\int_{0}^{t}e^{-a(t-s)}\text{d}B_s.
+\end{equation}
+The Fokker-Planck equation of the Ornstein-Uhlenbeck process is given by
+\begin{equation} \label{OU FP}
+	\frac{\partial{}p}{\partial{}t} = a\frac{\partial}{\partial{}x}[(x-\mu)p] + \frac{\sigma^2}{2}\frac{\partial^2p}{\partial{}x^2} \triangleq -\mathcal{L}p
+\end{equation}
+Given an initial point mass density at $X_0$, the solution to (\ref{OU FP}) is
+\begin{equation}
+	p(t,x) = \sqrt{\frac{a}{\pi\sigma^2\left(1-e^{-2at}\right)}} \text{exp}\left\{\frac{-a}{\sigma^2}\left[\frac{\left(x-\mu-(X_0-\mu)e^{-a{}t}\right)^2}{1-e^{-2at}}\right]\right\}
+\end{equation}
+
+\section{Deep Learning}
+To solve \eqref{OU FP}, we use a neural network $f(t,x,\theta)$ with $N_l$ layers and $N_n(l)$ nodes in each layer to approximate $p(t,x)$:
+\begin{align}
+	f^1(t,x,\theta) &= \Psi(W^1\begin{bmatrix} t & x \end{bmatrix}^T + c^1), \\
+	f^l(t,x,\theta) &= \Psi(W^l f^{l-1} + c^l) \qquad l = 2,\ldots,N_l, \\
+	f(t,x,\theta) &= W^{N_l+1} f^{N_l} + c^{N_l+1},
+\end{align}
+where the activation function $\psi(x) = \frac{e^x}{1+e^x}$, and $\Psi\left(\begin{bmatrix} x_1 & \cdots & x_n \end{bmatrix}^T\right) = \begin{bmatrix} \psi(x_1) & \cdots & \psi(x_n) \end{bmatrix}^T$.
+The dimensions of the parameters are $W^1\in\real^{N_n(1),2}$, $W^l\in\real^{N_n(l),N_n(l-1)}$ for $l=2,\ldots,N_l$, $W^{N_l+1}\in\real^{1\times N_n(N_l)}$, and $c^l\in\real^{N_n(l)\times 1}$ for $l=1,\ldots,N_l$, $c^{N_l+1}\in\real$.
+Denote $\theta = \{W^i,c^i\}_{i=1}^{N_l+1}$.
+Suppose $x\in\Omega = [-L,L]$, and $p(t,x)$ vanishes on $\partial\Omega$.
+Define the loss functions as
+\begin{align}
+	J(x,t,\theta) = \norm{\frac{\partial f(t,x,\theta)}{\partial t} + \mathcal{L}f(t,x,\theta)}^2_{\mathcal{L}^2(\Omega\times[0,T])} + \norm{f(t,x,\theta)}^2_{\mathcal{L}^2(\partial\Omega\times [0,T])} + \norm{f(t_0,x,\theta)-p(t_0,x)}^2_{\mathcal{L}^2(\Omega)}.
+\end{align}
+Sample $\{(x_n,t_n)\}_{n=1}^{N_s}$ from a uniform distribution on $\Omega\times[0,T]$, $\{(y_n,\tau_n)\}_{n=1}^{N_s}$ from a uniform distribution on $\partial\Omega\times[0,T]$, and $\{w_n\}_{n=1}^{N_s}$ from a uniform distribution on $\Omega$.
+Define $s_n = (x_n,t_n,y_n,\tau_n,w_n)$, and
+\begin{align}
+	G(\theta_n,s_n) = \left( \frac{\partial f(t_n,x_n,\theta_n)}{\partial t} + \mathcal{L}f(t_n,x_n,\theta_n) \right)^2 + f(\tau_n,y_n,\theta_n)^2 + (f(t_0,w_n,\theta_n)-p(t_0,w_n))^2.
+\end{align}
+Then $\theta$ is updated by
+\begin{align}
+	\theta_{n+1} = \theta_n - k_n\frac{\partial G(\theta_n,s_n)}{\partial \theta_n},
+\end{align}
+where $k_n$ is the learning rate.
+
+\subsection{Backward Propagation}
+Now let us calculate $\frac{\partial G(\theta,s)}{\partial \theta} \triangleq \frac{\partial G_1(\theta,t,x)}{\partial \theta} + \frac{\partial G_2(\theta,\tau,y)}{\partial \theta} + \frac{\partial G_3(\theta,w)}{\partial \theta}$.
+Note that
+\begin{align}
+	\psi'(x) &= \psi(x)(1-\psi(x)), \\
+	\psi''(x) &= \psi'(x) - 2\psi(x)\psi'(x), \\
+	\psi'''(x) &= \psi''(x) - 2\psi'(x)^2 - 2\psi(x)\psi''(x).
+\end{align}
+
+First, define $z^l = W^lf^{l-1}+c^l = W^l\Psi(z^{l-1}) + c^l \in \real^{N_n(l)}$, and we can get a backward propagation algorithm to calculate $\frac{\partial f}{\partial z^l_i}$ using the chain rule
+\begin{align}
+	\frac{\partial f}{\partial z^l_i} = \sum_{m = 0}^{N_n(l+1)} \frac{\partial f}{\partial z_m^{l+1}} \frac{\partial z_m^{l+1}}{\partial z_i^l} = \sum_{m = 0}^{N_n(l+1)} \frac{\partial f}{\partial z_m^{l+1}} W^{l+1}_{m,i} \psi'(z^l_i).
+\end{align}
+This can also be written in matrix form as
+\begin{align}
+	\frac{\partial f}{\partial z^l} = \left( (W^{l+1})^T \frac{\partial f}{z^{l+1}} \right) \odot \Psi'(z^l),
+\end{align}
+where $\Psi'(z^l) = \begin{bmatrix} \psi'(z^l_1) & \ldots & \psi'(z^l_{N_n(l)}) \end{bmatrix}^T$.
+With $\frac{\partial f}{\partial z^l}$, we may calculated $\frac{\partial f}{\partial W^l}$ and $\frac{\partial f}{\partial c^l}$ easily as
+\begin{align}
+	\frac{\partial f}{\partial W^l} &= \frac{\partial f}{\partial z^l} (f^{l-1})^T \\
+	\frac{\partial f}{\partial c^l} &= \frac{\partial f}{\partial z^l}.
+\end{align}
+Therefore, the gradient of $G_2(\theta,\tau,y)$ and $G_3(\theta,w)$ can be calculated as
+\begin{align}
+	\frac{\partial G_2(\theta,\tau,z)}{\partial W^l} &= 2f(\tau,y,\theta) \frac{\partial f(\tau,y,\theta)}{\partial z^l} (f^{l-1}(\tau,y,\theta))^T \\
+	\frac{\partial G_2(\theta,\tau,z)}{\partial c^l} &= 2f(\tau,y,\theta) \frac{\partial f(\tau,y,\theta)}{\partial z^l} \\
+	\frac{\partial G_3(\theta,w)}{\partial W^l} &= 2(f(t_0,w,\theta) - p(t_0,w)) \frac{\partial f(t_0,w,\theta)}{\partial z^l} (f^{l-1}(t_0,w,\theta))^T \\
+	\frac{\partial G_3(\theta,w)}{\partial c^l} &= 2(f(t_0,w,\theta) - p(t_0,w)) \frac{\partial f(t_0,w,\theta)}{\partial z^l}
+\end{align}
+
+Now let us focus on the gradient of $G_1(t,x,\theta)$.
+First, we have
+\begin{align}
+	\frac{\partial f}{\partial t} &= \left( \frac{\partial f}{\partial z^1} \right)^T \frac{\partial z^1}{\partial t} = (W^1_1)^T \frac{\partial f}{\partial z^1}, \\
+	\frac{\partial f}{\partial x} &= \left( \frac{\partial f}{\partial z^1} \right)^T \frac{\partial z^1}{\partial x} = (W^1_2)^T \frac{\partial f}{\partial z^1},
+\end{align}
+where $W^1_i$ is the $i$-th column of $W^1$.
+For the second derivative of $f$, it becomes harder
+\begin{align}
+	\frac{\partial^2 f}{\partial x^2} = (W^1_2)^T \frac{\partial^2 f}{\partial z^1 \partial x} = (W_2^1)^T \frac{\partial^2 f}{\partial z^1 \partial (z^1)^T} W_2^1.
+\end{align}
+The matrix $\frac{\partial^2 f}{\partial z^1 \partial (z^1)^T}$ can also be calculated using backpropagation.
+\begin{align}
+	\frac{\partial^2 f}{\partial z^l \partial z^{N_l}_i} &= \left( (W^{l+1})^T \frac{\partial^2 f}{\partial z^{l+1} \partial z^{N_l}_i} \right) \odot \Psi'(z^l), \qquad i = 1, \ldots, N_n(N_l) \\
+	\frac{\partial^2 f}{\partial z^l \partial z^1_j} &= \left( (W^{l+1})^T \frac{\partial^2 f}{\partial z^{l+1} \partial z^1_j} \right) \odot \Psi'(z^l), \qquad j = 1, \ldots, N_n(1) \\
+	\frac{\partial^2 f}{\partial z^{N_l}_i \partial z^{N_l}_j} &= \delta_{ij} W^{N_l+1}_i \psi''(z^{N_l}_i), \qquad i,j = 1,\ldots,N_n(N_l).
+\end{align}
+
+
+\end{document}
+
